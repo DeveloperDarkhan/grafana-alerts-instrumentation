@@ -2,7 +2,10 @@ package service
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"grafana-alerts-instrumentation/client"
 	"grafana-alerts-instrumentation/config"
@@ -45,7 +48,11 @@ func (s *AlertService) SearchAlerts() error {
 		if strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
 			count++
 			matchedAlerts = append(matchedAlerts, alert)
-			s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
+
+			// Показываем детали алерта только если не в режиме загрузки
+			if !s.config.DownloadMode {
+				s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
+			}
 		}
 	}
 
@@ -53,6 +60,10 @@ func (s *AlertService) SearchAlerts() error {
 
 	if s.config.ChangeMode && count > 0 {
 		return s.updateAlerts(matchedAlerts)
+	}
+
+	if s.config.DownloadMode && count > 0 {
+		return s.downloadAlertsSimple(matchedAlerts)
 	}
 
 	return nil
@@ -119,5 +130,89 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 	fmt.Printf("\nChanged %d alerts\n", changedCount)
 	fmt.Printf("Unchanged %d alerts\n", unchangedCount)
 
+	return nil
+}
+
+func (s *AlertService) downloadAlerts(alerts []models.AlertRule) error {
+	if err := os.MkdirAll(s.config.DownloadDir, 0755); err != nil {
+		return fmt.Errorf("failed to create download directory: %v", err)
+	}
+
+	downloadedCount := 0
+
+	for _, alert := range alerts {
+		yamlData, err := s.client.ExportAlertAsYAML(alert.UID)
+		if err != nil {
+			fmt.Printf("  Failed to download alert %s: %v\n", alert.UID, err)
+			continue
+		}
+
+		// Создаем безопасное имя файла
+		safeTitle := strings.ReplaceAll(alert.Title, "/", "_")
+		safeTitle = strings.ReplaceAll(safeTitle, " ", "_")
+		filename := fmt.Sprintf("%s_%s.yaml", alert.UID, safeTitle)
+		if len(filename) > 100 {
+			filename = fmt.Sprintf("%s.yaml", alert.UID)
+		}
+
+		filepath := filepath.Join(s.config.DownloadDir, filename)
+
+		if err := os.WriteFile(filepath, yamlData, 0644); err != nil {
+			fmt.Printf("  Failed to save alert %s: %v\n", alert.UID, err)
+			continue
+		}
+
+		fmt.Printf("  Downloaded: %s\n", filename)
+		downloadedCount++
+	}
+
+	fmt.Printf("\nDownloaded %d alert files to %s/\n", downloadedCount, s.config.DownloadDir)
+	return nil
+}
+
+func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
+	if err := os.MkdirAll(s.config.DownloadDir, 0755); err != nil {
+		return fmt.Errorf("failed to create download directory: %v", err)
+	}
+
+	// Группируем алерты по группам
+	groupMap := make(map[string][]models.AlertRule)
+	for _, alert := range alerts {
+		groupMap[alert.RuleGroup] = append(groupMap[alert.RuleGroup], alert)
+	}
+
+	// Создаем один YAML файл для всех алертов
+	var yamlContent strings.Builder
+	yamlContent.WriteString("groups:\n")
+
+	for groupName, groupAlerts := range groupMap {
+		yamlContent.WriteString(fmt.Sprintf("  - orgId: %d\n", groupAlerts[0].OrgID))
+		yamlContent.WriteString(fmt.Sprintf("    name: %s\n", groupName))
+		yamlContent.WriteString("    rules:\n")
+
+		for _, alert := range groupAlerts {
+			yamlContent.WriteString(fmt.Sprintf("      - uid: %s\n", alert.UID))
+			yamlContent.WriteString(fmt.Sprintf("        title: %s\n", alert.Title))
+			yamlContent.WriteString("        interval: 1m\n")
+			yamlContent.WriteString(fmt.Sprintf("        for: %s\n", alert.For))
+			yamlContent.WriteString(fmt.Sprintf("        keepFiringFor: %s\n", alert.KeepFiringFor))
+		}
+	}
+
+	// Создаем имя файла с nanotimestamp
+	timestamp := os.Getenv("NANO_TIME")
+	if timestamp == "" {
+		// Если переменная окружения не установлена, используем текущее время в наносекундах
+		timestamp = fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	filename := fmt.Sprintf("%s_downloads.yaml", timestamp)
+	filepath := filepath.Join(s.config.DownloadDir, filename)
+
+	if err := os.WriteFile(filepath, []byte(yamlContent.String()), 0644); err != nil {
+		return fmt.Errorf("failed to save combined alerts file: %v", err)
+	}
+
+	fmt.Printf("  Downloaded: %s\n", filename)
+	fmt.Printf("\nDownloaded %d alerts in 1 combined file to %s/\n", len(alerts), s.config.DownloadDir)
 	return nil
 }

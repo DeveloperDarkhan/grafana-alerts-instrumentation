@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"grafana-alerts-instrumentation/models"
@@ -428,4 +429,34 @@ func (c *GrafanaClient) deleteProvisionedAlert(alertUID string) error {
 	defer resp.Body.Close()
 
 	return nil // Игнорируем ошибки удаления
+}
+
+// ExportAlertAsYAML - экспорт алерта в YAML формате
+func (c *GrafanaClient) ExportAlertAsYAML(alertUID string) ([]byte, error) {
+	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s/export?format=yaml", c.baseURL, alertUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/yaml")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to export alert %s: status %d", alertUID, resp.StatusCode)
+	}
+
+	yamlData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return yamlData, nil
 }

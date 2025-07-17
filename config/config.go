@@ -9,13 +9,15 @@ import (
 const MaxTitleLength = 25
 
 type Config struct {
-	GrafanaURL  string
-	APIToken    string
-	SearchName  string
-	MaxTitleLen int
-	ChangeMode  bool
-	NewFiring   string
-	NewPending  string
+	GrafanaURL   string
+	APIToken     string
+	SearchName   string
+	MaxTitleLen  int
+	ChangeMode   bool
+	DownloadMode bool
+	DownloadDir  string
+	NewFiring    string
+	NewPending   string
 }
 
 func ParseFlags() *Config {
@@ -23,18 +25,22 @@ func ParseFlags() *Config {
 	token := flag.String("token", os.Getenv("GRAFANA_TOKEN"), "Grafana API token")
 	name := flag.String("name", "", "Alert name substring to search")
 	change := flag.Bool("change", false, "Enable change mode to update alerts")
+	download := flag.Bool("download", false, "Download matched alerts as YAML files")
+	downloadDir := flag.String("download-dir", "./downloads", "Directory to save downloaded alert YAML files")
 	firing := flag.String("firing", "", "New keep_firing_for duration (e.g., 1m, 5m)")
 	interval := flag.String("pending", "", "New pending (for) duration (e.g., 15m, 5m)")
 	flag.Parse()
 
 	return &Config{
-		GrafanaURL:  *url,
-		APIToken:    *token,
-		SearchName:  *name,
-		MaxTitleLen: MaxTitleLength,
-		ChangeMode:  *change,
-		NewFiring:   *firing,
-		NewPending:  *interval,
+		GrafanaURL:   *url,
+		APIToken:     *token,
+		SearchName:   *name,
+		MaxTitleLen:  MaxTitleLength,
+		ChangeMode:   *change,
+		DownloadMode: *download,
+		DownloadDir:  *downloadDir,
+		NewFiring:    *firing,
+		NewPending:   *interval,
 	}
 }
 
