@@ -15,6 +15,7 @@ type Config struct {
 	MaxTitleLen  int
 	ChangeMode   bool
 	DownloadMode bool
+	ReadAllMode  bool
 	DownloadDir  string
 	NewFiring    string
 	NewPending   string
@@ -26,6 +27,7 @@ func ParseFlags() *Config {
 	name := flag.String("name", "", "Alert name substring to search")
 	change := flag.Bool("change", false, "Enable change mode to update alerts")
 	download := flag.Bool("download", false, "Download matched alerts as YAML files")
+	readAll := flag.Bool("read-all", false, "Read and display all alerts without filtering")
 	downloadDir := flag.String("download-dir", "./downloads", "Directory to save downloaded alert YAML files")
 	firing := flag.String("firing", "", "New keep_firing_for duration (e.g., 1m, 5m)")
 	interval := flag.String("pending", "", "New pending (for) duration (e.g., 15m, 5m)")
@@ -38,6 +40,7 @@ func ParseFlags() *Config {
 		MaxTitleLen:  MaxTitleLength,
 		ChangeMode:   *change,
 		DownloadMode: *download,
+		ReadAllMode:  *readAll,
 		DownloadDir:  *downloadDir,
 		NewFiring:    *firing,
 		NewPending:   *interval,
@@ -45,8 +48,18 @@ func ParseFlags() *Config {
 }
 
 func (c *Config) Validate() error {
-	if c.GrafanaURL == "" || c.APIToken == "" || c.SearchName == "" {
-		return fmt.Errorf("url, token, and name are required (use flags or env)")
+	if c.GrafanaURL == "" || c.APIToken == "" {
+		return fmt.Errorf("url and token are required (use flags or env)")
+	}
+
+	// SearchName обязателен только если не в режиме скачивания всех алертов и не в режиме чтения всех алертов
+	if !c.DownloadMode && !c.ReadAllMode && c.SearchName == "" {
+		return fmt.Errorf("name is required for search/change operations (use --name flag)")
+	}
+
+	// Для режима скачивания требуется либо --read-all, либо --name
+	if c.DownloadMode && !c.ReadAllMode && c.SearchName == "" {
+		return fmt.Errorf("download mode requires either --read-all flag or --name parameter")
 	}
 
 	if c.ChangeMode && (c.NewFiring == "" && c.NewPending == "") {

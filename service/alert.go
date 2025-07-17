@@ -45,7 +45,9 @@ func (s *AlertService) SearchAlerts() error {
 	var matchedAlerts []models.AlertRule
 
 	for _, alert := range alerts {
-		if strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
+		// Если ReadAllMode или DownloadMode с пустым SearchName, добавляем все алерты
+		// Иначе фильтруем по названию
+		if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
 			count++
 			matchedAlerts = append(matchedAlerts, alert)
 
@@ -56,7 +58,13 @@ func (s *AlertService) SearchAlerts() error {
 		}
 	}
 
-	fmt.Printf("Found %d alerts matching '%s'\n", count, s.config.SearchName)
+	if s.config.ReadAllMode {
+		fmt.Printf("Found %d total alerts\n", count)
+	} else if s.config.SearchName == "" {
+		fmt.Printf("Found %d total alerts\n", count)
+	} else {
+		fmt.Printf("Found %d alerts matching '%s'\n", count, s.config.SearchName)
+	}
 
 	if s.config.ChangeMode && count > 0 {
 		return s.updateAlerts(matchedAlerts)
@@ -67,15 +75,6 @@ func (s *AlertService) SearchAlerts() error {
 	}
 
 	return nil
-}
-
-func (s *AlertService) printAlert(alert models.AlertRule) {
-	title := alert.Title
-	if len(title) > s.config.MaxTitleLen {
-		title = title[:s.config.MaxTitleLen] + "..."
-	}
-	fmt.Printf("uid: %s | pending: %s | group: %s | keep_firing_for: %s | %s\n",
-		alert.UID, alert.For, alert.RuleGroup, alert.KeepFiringFor, title)
 }
 
 func (s *AlertService) printAlertWithGroup(alert models.AlertRule, groupInterval string) {
@@ -130,43 +129,6 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 	fmt.Printf("\nChanged %d alerts\n", changedCount)
 	fmt.Printf("Unchanged %d alerts\n", unchangedCount)
 
-	return nil
-}
-
-func (s *AlertService) downloadAlerts(alerts []models.AlertRule) error {
-	if err := os.MkdirAll(s.config.DownloadDir, 0755); err != nil {
-		return fmt.Errorf("failed to create download directory: %v", err)
-	}
-
-	downloadedCount := 0
-
-	for _, alert := range alerts {
-		yamlData, err := s.client.ExportAlertAsYAML(alert.UID)
-		if err != nil {
-			fmt.Printf("  Failed to download alert %s: %v\n", alert.UID, err)
-			continue
-		}
-
-		// Создаем безопасное имя файла
-		safeTitle := strings.ReplaceAll(alert.Title, "/", "_")
-		safeTitle = strings.ReplaceAll(safeTitle, " ", "_")
-		filename := fmt.Sprintf("%s_%s.yaml", alert.UID, safeTitle)
-		if len(filename) > 100 {
-			filename = fmt.Sprintf("%s.yaml", alert.UID)
-		}
-
-		filepath := filepath.Join(s.config.DownloadDir, filename)
-
-		if err := os.WriteFile(filepath, yamlData, 0644); err != nil {
-			fmt.Printf("  Failed to save alert %s: %v\n", alert.UID, err)
-			continue
-		}
-
-		fmt.Printf("  Downloaded: %s\n", filename)
-		downloadedCount++
-	}
-
-	fmt.Printf("\nDownloaded %d alert files to %s/\n", downloadedCount, s.config.DownloadDir)
 	return nil
 }
 
