@@ -48,7 +48,7 @@ func (c *GrafanaClient) GetAlerts() ([]models.AlertRule, error) {
 }
 
 func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
-	// Используем Prometheus API эндпоинт
+	// Use Prometheus API endpoint
 	req, err := http.NewRequest("GET", c.baseURL+"/api/prometheus/grafana/api/v1/rules", nil)
 	if err != nil {
 		return nil, err
@@ -71,17 +71,17 @@ func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
 		return nil, fmt.Errorf("failed to parse prometheus response: %v", err)
 	}
 
-	// Конвертируем PrometheusRuleGroup в RuleGroup
+	// Convert PrometheusRuleGroup to RuleGroup
 	var ruleGroups []models.RuleGroup
 	for _, promGroup := range promResponse.Data.Groups {
-		// Конвертируем интервал из секунд в строку формата "Xs"
+		// Convert interval from seconds to string format "Xs"
 		intervalStr := fmt.Sprintf("%ds", promGroup.Interval)
 
 		ruleGroup := models.RuleGroup{
 			Name:      promGroup.Name,
 			FolderUID: promGroup.FolderUID,
 			Interval:  intervalStr,
-			// Rules заполним позже если понадобится
+			// Rules will be filled later if needed
 		}
 		ruleGroups = append(ruleGroups, ruleGroup)
 	}
@@ -90,16 +90,16 @@ func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
 }
 
 func (c *GrafanaClient) UpdateAlert(alert models.AlertRule) error {
-	// Всегда используем заголовок X-Disable-Provenance: true для сохранения UI-редактируемости
+	// Always use X-Disable-Provenance: true header to preserve UI editability
 	return c.updateViaProvisioningAPIWithDisabledProvenance(alert)
 }
 
-// updateViaRulerAPI - обновление через Ruler API (сохраняет UI-редактируемость)
+// updateViaRulerAPI - update via Ruler API (preserves UI editability)
 func (c *GrafanaClient) updateViaRulerAPI(alert models.AlertRule) error {
-	// Попробуем использовать внутренний API, который использует UI Grafana
+	// Try to use the internal API that Grafana UI uses
 	url := fmt.Sprintf("%s/api/v1/rules", c.baseURL)
 
-	// Создаем структуру как для UI
+	// Create structure like for UI
 	updateRequest := map[string]interface{}{
 		"uid":             alert.UID,
 		"title":           alert.Title,
@@ -140,10 +140,10 @@ func (c *GrafanaClient) updateViaRulerAPI(alert models.AlertRule) error {
 	return fmt.Errorf("rules API returned status %d", resp.StatusCode)
 }
 
-// updateViaAlertingAPI - обновление через стандартный alerting API
+// updateViaAlertingAPI - update via standard alerting API
 func (c *GrafanaClient) updateViaAlertingAPI(alert models.AlertRule) error {
-	// Попробуем использовать тот же API, что использует UI
-	// Сначала получим полную информацию об алерте
+	// Try to use the same API that UI uses
+	// First get full alert information
 	getURL := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, alert.UID)
 
 	req, err := http.NewRequest("GET", getURL, nil)
@@ -167,18 +167,18 @@ func (c *GrafanaClient) updateViaAlertingAPI(alert models.AlertRule) error {
 		return err
 	}
 
-	// Обновляем только нужные поля
+	// Update only needed fields
 	if alert.For != "" {
 		fullAlert["for"] = alert.For
 	}
 	if alert.KeepFiringFor != "" {
-		// Для keep_firing_for может потребоваться другое поле
+		// For keep_firing_for might require a different field
 		if annotations, ok := fullAlert["annotations"].(map[string]interface{}); ok {
 			annotations["__keep_firing_for__"] = alert.KeepFiringFor
 		}
 	}
 
-	// Пробуем обновить через UI API
+	// Try to update via UI API
 	updateURL := fmt.Sprintf("%s/api/ruler/grafana/api/v1/rules/%s", c.baseURL, alert.RuleGroup)
 
 	jsonData, err := json.Marshal(fullAlert)
@@ -207,7 +207,7 @@ func (c *GrafanaClient) updateViaAlertingAPI(alert models.AlertRule) error {
 	return fmt.Errorf("UI-like API returned status %d", resp.StatusCode)
 }
 
-// updateViaProvisioningAPIWithDisabledProvenance - обновление через provisioning API с сохранением UI-редактируемости
+// updateViaProvisioningAPIWithDisabledProvenance - update via provisioning API preserving UI editability
 func (c *GrafanaClient) updateViaProvisioningAPIWithDisabledProvenance(alert models.AlertRule) error {
 	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, alert.UID)
 
@@ -221,7 +221,7 @@ func (c *GrafanaClient) updateViaProvisioningAPIWithDisabledProvenance(alert mod
 		return err
 	}
 
-	// МАГИЧЕСКИЙ ЗАГОЛОВОК! Сохраняет UI-редактируемость
+	// MAGIC HEADER! Preserves UI editability
 	req.Header.Set("X-Disable-Provenance", "true")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
@@ -239,7 +239,7 @@ func (c *GrafanaClient) updateViaProvisioningAPIWithDisabledProvenance(alert mod
 	return fmt.Errorf("API returned status %d", resp.StatusCode)
 }
 
-// updateViaProvisioningAPI - обновление через provisioning API (делает алерт read-only)
+// updateViaProvisioningAPI - update via provisioning API (makes alert read-only)
 func (c *GrafanaClient) updateViaProvisioningAPI(alert models.AlertRule) error {
 	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, alert.UID)
 
@@ -269,21 +269,21 @@ func (c *GrafanaClient) updateViaProvisioningAPI(alert models.AlertRule) error {
 	return fmt.Errorf("provisioning API returned status %d", resp.StatusCode)
 }
 
-// restoreUIEditability - попытка восстановить возможность редактирования в UI
+// restoreUIEditability - attempt to restore UI editability
 func (c *GrafanaClient) restoreUIEditability(alert models.AlertRule) error {
-	// Пытаемся "сбросить" статус provisioned несколькими способами:
+	// Try to "reset" provisioned status using several methods:
 
-	// Способ 1: Удаляем поле provenance через внутренний API
+	// Method 1: Remove provenance field via internal API
 	if err := c.clearProvenance(alert.UID); err == nil {
 		return nil
 	}
 
-	// Способ 2: Попробуем экспорт-импорт через dashboard API
+	// Method 2: Try export-import via dashboard API
 	if err := c.reimportAsNonProvisioned(alert); err == nil {
 		return nil
 	}
 
-	// Способ 3: Обновление через имитацию UI запроса
+	// Method 3: Update via UI request emulation
 	if err := c.updateViaUIEmulation(alert); err == nil {
 		return nil
 	}
@@ -291,9 +291,9 @@ func (c *GrafanaClient) restoreUIEditability(alert models.AlertRule) error {
 	return fmt.Errorf("all methods to restore UI editability failed")
 }
 
-// clearProvenance - попытка очистить статус provenance
+// clearProvenance - attempt to clear provenance status
 func (c *GrafanaClient) clearProvenance(alertUID string) error {
-	// Пробуем очистить provenance через внутренний API
+	// Try to clear provenance via internal API
 	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s/provenance", c.baseURL, alertUID)
 
 	req, err := http.NewRequest("DELETE", url, nil)
@@ -316,9 +316,9 @@ func (c *GrafanaClient) clearProvenance(alertUID string) error {
 	return fmt.Errorf("failed to clear provenance: %d", resp.StatusCode)
 }
 
-// reimportAsNonProvisioned - попытка переимпорта алерта как не-provisioned
+// reimportAsNonProvisioned - attempt to reimport alert as non-provisioned
 func (c *GrafanaClient) reimportAsNonProvisioned(alert models.AlertRule) error {
-	// Получаем полные данные алерта
+	// Get full alert data
 	getURL := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, alert.UID)
 
 	req, err := http.NewRequest("GET", getURL, nil)
@@ -342,11 +342,11 @@ func (c *GrafanaClient) reimportAsNonProvisioned(alert models.AlertRule) error {
 		return err
 	}
 
-	// Удаляем поля, связанные с provenance
+	// Remove provenance-related fields
 	delete(fullAlert, "provenance")
-	delete(fullAlert, "id") // Удаляем ID для пересоздания
+	delete(fullAlert, "id") // Remove ID for recreation
 
-	// Создаем новый алерт через UI API
+	// Create new alert via UI API
 	createURL := fmt.Sprintf("%s/api/v1/rules", c.baseURL)
 
 	jsonData, err := json.Marshal(fullAlert)
@@ -369,7 +369,7 @@ func (c *GrafanaClient) reimportAsNonProvisioned(alert models.AlertRule) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// Если создание прошло успешно, удаляем старый provisioned алерт
+		// If creation was successful, delete old provisioned alert
 		c.deleteProvisionedAlert(alert.UID)
 		return nil
 	}
@@ -377,12 +377,12 @@ func (c *GrafanaClient) reimportAsNonProvisioned(alert models.AlertRule) error {
 	return fmt.Errorf("failed to recreate alert: %d", resp.StatusCode)
 }
 
-// updateViaUIEmulation - обновление через полную имитацию UI
+// updateViaUIEmulation - update via full UI emulation
 func (c *GrafanaClient) updateViaUIEmulation(alert models.AlertRule) error {
-	// Пытаемся использовать точно такие же заголовки и структуру, как UI
+	// Try to use exactly the same headers and structure as UI
 	url := fmt.Sprintf("%s/api/ruler/grafana/api/v1/rules", c.baseURL)
 
-	// Создаем структуру как в UI без provisioning полей
+	// Create structure like in UI without provisioning fields
 	uiRequest := map[string]interface{}{
 		"uid":          alert.UID,
 		"title":        alert.Title,
@@ -406,7 +406,7 @@ func (c *GrafanaClient) updateViaUIEmulation(alert models.AlertRule) error {
 		return err
 	}
 
-	// Имитируем заголовки из UI
+	// Emulate headers from UI
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Grafana-Org-Id", "1")
@@ -427,7 +427,7 @@ func (c *GrafanaClient) updateViaUIEmulation(alert models.AlertRule) error {
 	return fmt.Errorf("UI emulation failed: %d", resp.StatusCode)
 }
 
-// deleteProvisionedAlert - удаление старого provisioned алерта
+// deleteProvisionedAlert - delete old provisioned alert
 func (c *GrafanaClient) deleteProvisionedAlert(alertUID string) error {
 	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, alertUID)
 
@@ -444,10 +444,10 @@ func (c *GrafanaClient) deleteProvisionedAlert(alertUID string) error {
 	}
 	defer resp.Body.Close()
 
-	return nil // Игнорируем ошибки удаления
+	return nil // Ignore deletion errors
 }
 
-// ExportAlertAsYAML - экспорт алерта в YAML формате
+// ExportAlertAsYAML - export alert in YAML format
 func (c *GrafanaClient) ExportAlertAsYAML(alertUID string) ([]byte, error) {
 	url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s/export?format=yaml", c.baseURL, alertUID)
 

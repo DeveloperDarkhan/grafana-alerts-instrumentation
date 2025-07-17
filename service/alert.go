@@ -26,29 +26,29 @@ func NewAlertService(cfg *config.Config) *AlertService {
 }
 
 func (s *AlertService) SearchAlerts() error {
-	// Получаем алерты
+	// Get alerts
 	alerts, err := s.client.GetAlerts()
 	if err != nil {
 		return fmt.Errorf("failed to get alerts: %v", err)
 	}
 
-	// Получаем группы правил для получения реальных интервалов
+	// Get rule groups to get real intervals
 	ruleGroups, err := s.client.GetRuleGroups()
 	if err != nil {
-		// Если не удается получить группы, используем заглушку
+		// If we can't get groups, use default placeholder
 		fmt.Printf("Warning: failed to get rule groups, using default intervals: %v\n", err)
 	}
 
-	// Создаем карту группа -> интервал из реальных данных групп
+	// Create map group -> interval from real group data
 	groupIntervals := make(map[string]string)
 	for _, group := range ruleGroups {
 		groupIntervals[group.Name] = group.Interval
 	}
 
-	// Для групп без данных используем заглушку
+	// For groups without data use placeholder
 	for _, alert := range alerts {
 		if _, exists := groupIntervals[alert.RuleGroup]; !exists {
-			groupIntervals[alert.RuleGroup] = "1m" // заглушка для неизвестных групп
+			groupIntervals[alert.RuleGroup] = "1m" // placeholder for unknown groups
 		}
 	}
 
@@ -56,13 +56,13 @@ func (s *AlertService) SearchAlerts() error {
 	var matchedAlerts []models.AlertRule
 
 	for _, alert := range alerts {
-		// Если ReadAllMode или DownloadMode с пустым SearchName, добавляем все алерты
-		// Иначе фильтруем по названию
+		// If ReadAllMode or DownloadMode with empty SearchName, add all alerts
+		// Otherwise filter by name
 		if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
 			count++
 			matchedAlerts = append(matchedAlerts, alert)
 
-			// Показываем детали алерта только если не в режиме загрузки
+			// Show alert details only if not in download mode
 			if !s.config.DownloadMode {
 				s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
 			}
@@ -116,7 +116,7 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 		}
 
 		if updated {
-			// Показываем изменения
+			// Show changes
 			if s.config.NewFiring != "" {
 				fmt.Printf("  keep_firing_for: %s -> New: %s\n", originalAlert.KeepFiringFor, alert.KeepFiringFor)
 			}
@@ -148,7 +148,7 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		return fmt.Errorf("failed to create download directory: %v", err)
 	}
 
-	// Получаем реальные интервалы групп
+	// Get real group intervals
 	ruleGroups, err := s.client.GetRuleGroups()
 	groupIntervals := make(map[string]string)
 	if err != nil {
@@ -159,21 +159,21 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		}
 	}
 
-	// Группируем алерты по группам
+	// Group alerts by groups
 	groupMap := make(map[string][]models.AlertRule)
 	for _, alert := range alerts {
 		groupMap[alert.RuleGroup] = append(groupMap[alert.RuleGroup], alert)
 	}
 
-	// Создаем один YAML файл для всех алертов
+	// Create one YAML file for all alerts
 	var yamlContent strings.Builder
 	yamlContent.WriteString("groups:\n")
 
 	for groupName, groupAlerts := range groupMap {
-		// Получаем реальный интервал группы или используем заглушку
+		// Get real group interval or use placeholder
 		interval := groupIntervals[groupName]
 		if interval == "" {
-			interval = "1m" // заглушка для неизвестных групп
+			interval = "1m" // placeholder for unknown groups
 		}
 
 		yamlContent.WriteString(fmt.Sprintf("  - orgId: %d\n", groupAlerts[0].OrgID))
@@ -189,10 +189,10 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		}
 	}
 
-	// Создаем имя файла с nanotimestamp
+	// Create filename with nanotimestamp
 	timestamp := os.Getenv("NANO_TIME")
 	if timestamp == "" {
-		// Если переменная окружения не установлена, используем текущее время в наносекундах
+		// If environment variable is not set, use current time in nanoseconds
 		timestamp = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	filename := fmt.Sprintf("%s_downloads.yaml", timestamp)

@@ -34,7 +34,7 @@ type APIResponse struct {
 	Groups []AlertGroup `json:"groups"`
 }
 
-// Структура для ответа Prometheus API
+// Structure for Prometheus API response
 type PrometheusAPIResponse struct {
 	Status string              `json:"status"`
 	Data   PrometheusRulesData `json:"data"`
@@ -48,6 +48,6 @@ type PrometheusRuleGroup struct {
 	Name      string        `json:"name"`
 	File      string        `json:"file"`
 	FolderUID string        `json:"folderUid"`
-	Interval  int           `json:"interval"` // в секундах
-	Rules     []interface{} `json:"rules"`    // правила могут быть разных типов
+	Interval  int           `json:"interval"` // in seconds
+	Rules     []interface{} `json:"rules"`    // rules can be of different types
 }

@@ -52,12 +52,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("url and token are required (use flags or env)")
 	}
 
-	// SearchName обязателен только если не в режиме скачивания всех алертов и не в режиме чтения всех алертов
+	// SearchName is required only if not in download all alerts mode and not in read all alerts mode
 	if !c.DownloadMode && !c.ReadAllMode && c.SearchName == "" {
 		return fmt.Errorf("name is required for search/change operations (use --name flag)")
 	}
 
-	// Для режима скачивания требуется либо --read-all, либо --name
+	// For download mode either --read-all or --name is required
 	if c.DownloadMode && !c.ReadAllMode && c.SearchName == "" {
 		return fmt.Errorf("download mode requires either --read-all flag or --name parameter")
 	}

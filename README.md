@@ -113,9 +113,9 @@ Export alerts as YAML files:
 - **UI preservation**: Maintains alert editability in Grafana UI after API updates
 - **Clean output**: Hides verbose details during download operations
 
-## Пример вывода
+## Example Output
 
-### Поиск конкретных алертов
+### Search for specific alerts
 ```bash
 $ ./grafana-alerts --name="staging"
 uid: alertid123 | pending: 15m | group: cpu | eval_interval: 60s | keep_firing_for: 1m | Test Alert Name regex [St...
@@ -123,7 +123,7 @@ uid: alertid456 | pending: 5m | group: memory | eval_interval: 300s | keep_firin
 Found 2 alerts matching 'staging'
 ```
 
-### Просмотр всех алертов
+### View all alerts
 ```bash
 $ ./grafana-alerts --read-all
 uid: alert001 | pending: 15m | group: cpu | eval_interval: 60s | keep_firing_for: 1m | CPU Usage Alert...
@@ -132,7 +132,7 @@ uid: alert003 | pending: 5m | group: disk | eval_interval: 60s | keep_firing_for
 Found 3 total alerts
 ```
 
-### Изменение параметров алертов
+### Change alert parameters
 ```bash
 $ ./grafana-alerts --name="staging" --change --firing=5m --pending=10m
 uid: alertid123 | pending: 15m | group: cpu | eval_interval: 60s | keep_firing_for: 1m | Test Alert Name...
@@ -145,7 +145,7 @@ Changed 1 alerts
 Unchanged 0 alerts
 ```
 
-### Скачивание алертов в YAML
+### Download alerts as YAML
 ```bash
 $ ./grafana-alerts --read-all --download
 Found 5 total alerts
@@ -154,7 +154,7 @@ Found 5 total alerts
 Downloaded 5 alerts in 1 combined file to ./downloads/
 ```
 
-### Содержимое YAML файла
+### YAML file content
 ```yaml
 groups:
   - orgId: 1
