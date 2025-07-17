@@ -48,7 +48,7 @@ func (c *GrafanaClient) GetAlerts() ([]models.AlertRule, error) {
 }
 
 func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
-	// Попробуем альтернативный эндпоинт
+	// Используем Prometheus API эндпоинт
 	req, err := http.NewRequest("GET", c.baseURL+"/api/prometheus/grafana/api/v1/rules", nil)
 	if err != nil {
 		return nil, err
@@ -66,11 +66,27 @@ func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
 		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
 	}
 
-	var groups []models.RuleGroup
-	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
-		return nil, fmt.Errorf("failed to parse rule groups: %v", err)
+	var promResponse models.PrometheusAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&promResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse prometheus response: %v", err)
 	}
-	return groups, nil
+
+	// Конвертируем PrometheusRuleGroup в RuleGroup
+	var ruleGroups []models.RuleGroup
+	for _, promGroup := range promResponse.Data.Groups {
+		// Конвертируем интервал из секунд в строку формата "Xs"
+		intervalStr := fmt.Sprintf("%ds", promGroup.Interval)
+
+		ruleGroup := models.RuleGroup{
+			Name:      promGroup.Name,
+			FolderUID: promGroup.FolderUID,
+			Interval:  intervalStr,
+			// Rules заполним позже если понадобится
+		}
+		ruleGroups = append(ruleGroups, ruleGroup)
+	}
+
+	return ruleGroups, nil
 }
 
 func (c *GrafanaClient) UpdateAlert(alert models.AlertRule) error {

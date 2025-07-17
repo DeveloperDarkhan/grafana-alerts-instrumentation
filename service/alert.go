@@ -32,12 +32,23 @@ func (s *AlertService) SearchAlerts() error {
 		return fmt.Errorf("failed to get alerts: %v", err)
 	}
 
-	// Создаем карту группа -> интервал из самих алертов (если доступно)
-	// Пока используем заглушку, так как API groups может не работать
+	// Получаем группы правил для получения реальных интервалов
+	ruleGroups, err := s.client.GetRuleGroups()
+	if err != nil {
+		// Если не удается получить группы, используем заглушку
+		fmt.Printf("Warning: failed to get rule groups, using default intervals: %v\n", err)
+	}
+
+	// Создаем карту группа -> интервал из реальных данных групп
 	groupIntervals := make(map[string]string)
+	for _, group := range ruleGroups {
+		groupIntervals[group.Name] = group.Interval
+	}
+
+	// Для групп без данных используем заглушку
 	for _, alert := range alerts {
 		if _, exists := groupIntervals[alert.RuleGroup]; !exists {
-			groupIntervals[alert.RuleGroup] = "1m" // заглушка, пока не найдем правильный API
+			groupIntervals[alert.RuleGroup] = "1m" // заглушка для неизвестных групп
 		}
 	}
 
@@ -137,6 +148,17 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		return fmt.Errorf("failed to create download directory: %v", err)
 	}
 
+	// Получаем реальные интервалы групп
+	ruleGroups, err := s.client.GetRuleGroups()
+	groupIntervals := make(map[string]string)
+	if err != nil {
+		fmt.Printf("Warning: failed to get rule groups, using default interval: %v\n", err)
+	} else {
+		for _, group := range ruleGroups {
+			groupIntervals[group.Name] = group.Interval
+		}
+	}
+
 	// Группируем алерты по группам
 	groupMap := make(map[string][]models.AlertRule)
 	for _, alert := range alerts {
@@ -148,14 +170,20 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 	yamlContent.WriteString("groups:\n")
 
 	for groupName, groupAlerts := range groupMap {
+		// Получаем реальный интервал группы или используем заглушку
+		interval := groupIntervals[groupName]
+		if interval == "" {
+			interval = "1m" // заглушка для неизвестных групп
+		}
+
 		yamlContent.WriteString(fmt.Sprintf("  - orgId: %d\n", groupAlerts[0].OrgID))
 		yamlContent.WriteString(fmt.Sprintf("    name: %s\n", groupName))
+		yamlContent.WriteString(fmt.Sprintf("    interval: %s\n", interval))
 		yamlContent.WriteString("    rules:\n")
 
 		for _, alert := range groupAlerts {
 			yamlContent.WriteString(fmt.Sprintf("      - uid: %s\n", alert.UID))
 			yamlContent.WriteString(fmt.Sprintf("        title: %s\n", alert.Title))
-			yamlContent.WriteString("        interval: 1m\n")
 			yamlContent.WriteString(fmt.Sprintf("        for: %s\n", alert.For))
 			yamlContent.WriteString(fmt.Sprintf("        keepFiringFor: %s\n", alert.KeepFiringFor))
 		}
