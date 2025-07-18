@@ -31,6 +31,11 @@ func (s *AlertService) SearchAlerts() error {
 		return s.ListGroups()
 	}
 
+	// If need to show group details, call corresponding function
+	if s.config.GroupDetails != "" {
+		return s.ShowGroupDetails()
+	}
+
 	// Get alerts
 	alerts, err := s.client.GetAlerts()
 	if err != nil {
@@ -155,9 +160,15 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 				continue
 			}
 
-			// ЗАТЕМ устанавливаем нужный evaluation interval для группы
+			// ВАЖНО: Даем время Grafana обновить состояние группы после перемещения алерта
 			if s.config.NewGroup != "" && s.config.NewInterval != "" {
-				if err := s.client.UpdateGroupAfterAlertMove(s.config.NewGroup, alert.FolderUID, s.config.NewInterval); err != nil {
+				fmt.Printf("  📝 Alert moved successfully, waiting for group state to update...\n")
+				time.Sleep(3 * time.Second) // Пауза для обновления состояния
+
+				// Создаем новый клиент для получения свежего состояния
+				freshClient := client.NewGrafanaClient(s.config.GrafanaURL, s.config.APIToken)
+
+				if err := freshClient.UpdateGroupAfterAlertMove(s.config.NewGroup, alert.FolderUID, s.config.NewInterval); err != nil {
 					fmt.Printf("  group_interval: ⚠️  Failed to set '%s' via API: %v\n", s.config.NewInterval, err)
 					fmt.Printf("  📋 Manual UI setup required for evaluation interval\n")
 				} else {
@@ -317,6 +328,77 @@ func (s *AlertService) ListGroups() error {
 		fmt.Printf("%s\n", folder)
 		fmt.Printf("  └── %s (%s) - %d alert(s)\n", groupName, interval, count)
 		fmt.Println()
+	}
+
+	return nil
+}
+
+func (s *AlertService) ShowGroupDetails() error {
+	// Parse group name and find its folder
+	groupName := s.config.GroupDetails
+
+	// Get all rule groups to find the folder UID for this group
+	ruleGroups, err := s.client.GetRuleGroups()
+	if err != nil {
+		return fmt.Errorf("failed to get rule groups: %v", err)
+	}
+
+	var targetFolderUID string
+	for _, group := range ruleGroups {
+		if group.Name == groupName {
+			targetFolderUID = group.FolderUID
+			break
+		}
+	}
+
+	if targetFolderUID == "" {
+		return fmt.Errorf("group '%s' not found", groupName)
+	}
+
+	// Get detailed information about the group
+	groupDetails, err := s.client.GetGroupDetails(groupName, targetFolderUID)
+	if err != nil {
+		return fmt.Errorf("failed to get group details: %v", err)
+	}
+
+	// Get folder information
+	folders, err := s.client.GetFolders()
+	folderName := targetFolderUID // fallback to UID if name not found
+	if err == nil {
+		for _, folder := range folders {
+			if folder.UID == targetFolderUID {
+				folderName = folder.Title
+				break
+			}
+		}
+	}
+
+	fmt.Printf("Evaluation Group Details\n")
+	fmt.Printf("========================\n")
+	fmt.Printf("📁 Folder: %s\n", folderName)
+	fmt.Printf("📊 Group: %s\n", groupDetails.Name)
+	fmt.Printf("⏱️  Evaluation Interval: %s\n", groupDetails.Interval)
+	fmt.Printf("🔢 Total Rules: %d\n", len(groupDetails.Rules))
+	fmt.Printf("\nAlert Rules:\n")
+	fmt.Printf("============\n")
+
+	for i, rule := range groupDetails.Rules {
+		// Truncate title if too long
+		title := rule.Title
+		if len(title) > s.config.MaxTitleLen {
+			title = title[:s.config.MaxTitleLen-3] + "..."
+		}
+
+		fmt.Printf("%d. %s\n", i+1, title)
+		fmt.Printf("   UID: %s\n", rule.UID)
+		fmt.Printf("   Pending: %s\n", rule.For)
+		fmt.Printf("   Keep Firing: %s\n", rule.KeepFiringFor)
+		if rule.IsPaused {
+			fmt.Printf("   Status: ⏸️  PAUSED\n")
+		} else {
+			fmt.Printf("   Status: ▶️  ACTIVE\n")
+		}
+		fmt.Printf("\n")
 	}
 
 	return nil

@@ -17,6 +17,7 @@ type Config struct {
 	DownloadMode bool
 	ReadAllMode  bool
 	ListGroups   bool
+	GroupDetails string
 	DownloadDir  string
 	NewFiring    string
 	NewPending   string
@@ -32,6 +33,7 @@ func ParseFlags() *Config {
 	download := flag.Bool("download", false, "Download matched alerts as YAML files")
 	readAll := flag.Bool("read-all", false, "Read and display all alerts without filtering")
 	listGroups := flag.Bool("list-groups", false, "List all evaluation groups with their intervals and alert counts")
+	groupDetails := flag.String("group-details", "", "Show detailed information about a specific evaluation group")
 	downloadDir := flag.String("download-dir", "./downloads", "Directory to save downloaded alert YAML files")
 	firing := flag.String("firing", "", "New keep_firing_for duration (e.g., 1m, 5m)")
 	interval := flag.String("pending", "", "New pending (for) duration (e.g., 15m, 5m)")
@@ -48,6 +50,7 @@ func ParseFlags() *Config {
 		DownloadMode: *download,
 		ReadAllMode:  *readAll,
 		ListGroups:   *listGroups,
+		GroupDetails: *groupDetails,
 		DownloadDir:  *downloadDir,
 		NewFiring:    *firing,
 		NewPending:   *interval,
@@ -61,8 +64,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("url and token are required (use flags or env)")
 	}
 
-	// SearchName is required only if not in download all alerts mode, not in read all alerts mode, and not in list groups mode
-	if !c.DownloadMode && !c.ReadAllMode && !c.ListGroups && c.SearchName == "" {
+	// SearchName is required only if not in download all alerts mode, not in read all alerts mode, not in list groups mode, and not showing group details
+	if !c.DownloadMode && !c.ReadAllMode && !c.ListGroups && c.GroupDetails == "" && c.SearchName == "" {
 		return fmt.Errorf("name is required for search/change operations (use --name flag)")
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,41 @@ import (
 type GrafanaClient struct {
 	baseURL string
 	token   string
+}
+
+// parseIntervalToSeconds converts interval strings like "5m", "300s", "1h" to seconds
+func parseIntervalToSeconds(interval string) (int64, error) {
+	if interval == "" {
+		return 0, fmt.Errorf("empty interval")
+	}
+
+	// Handle pure number (assume seconds)
+	if num, err := strconv.ParseInt(interval, 10, 64); err == nil {
+		return num, nil
+	}
+
+	// Handle suffixed intervals
+	switch {
+	case strings.HasSuffix(interval, "s"):
+		numStr := strings.TrimSuffix(interval, "s")
+		return strconv.ParseInt(numStr, 10, 64)
+	case strings.HasSuffix(interval, "m"):
+		numStr := strings.TrimSuffix(interval, "m")
+		minutes, err := strconv.ParseInt(numStr, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return minutes * 60, nil
+	case strings.HasSuffix(interval, "h"):
+		numStr := strings.TrimSuffix(interval, "h")
+		hours, err := strconv.ParseInt(numStr, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return hours * 3600, nil
+	default:
+		return 0, fmt.Errorf("unsupported interval format: %s", interval)
+	}
 }
 
 func NewGrafanaClient(baseURL, token string) *GrafanaClient {
@@ -38,7 +74,7 @@ func (c *GrafanaClient) GetAlerts() ([]models.AlertRule, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("grafana API returned status %d", resp.StatusCode)
 	}
 
 	var alerts []models.AlertRule
@@ -51,13 +87,15 @@ func (c *GrafanaClient) GetAlerts() ([]models.AlertRule, error) {
 
 func (c *GrafanaClient) UpdateGroupAfterAlertMove(groupName, folderUID, interval string) error {
 	// Retry logic to handle HTTP 202 "Accepted" status
-	maxRetries := 15              // Увеличили с 10 до 15
-	retryDelay := 3 * time.Second // Увеличили с 2s до 3s
+	maxRetries := 3
+	retryDelay := 2 * time.Second
 
 	fmt.Printf("🔧 Setting evaluation interval '%s' for group '%s'...\n", interval, groupName)
 
 	for i := 0; i < maxRetries; i++ {
-		time.Sleep(retryDelay) // Wait before each attempt
+		if i > 0 { // Не ждем перед первой попыткой, т.к. уже ждали в service
+			time.Sleep(retryDelay)
+		}
 
 		err := c.updateGroupEvaluationInterval(groupName, folderUID, interval)
 		if err == nil {
@@ -97,7 +135,7 @@ func (c *GrafanaClient) GetRuleGroups() ([]models.RuleGroup, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("grafana API returned status %d", resp.StatusCode)
 	}
 
 	var promResponse models.PrometheusAPIResponse
@@ -191,13 +229,14 @@ func (c *GrafanaClient) CreateOrUpdateRuleGroup(ruleGroup models.RuleGroup) erro
 }
 
 func (c *GrafanaClient) updateGroupEvaluationInterval(groupName, folderUID, interval string) error {
-	// Get current rules for the group
-	url := c.baseURL + "/api/ruler/grafana/api/v1/rules/" + folderUID + "/" + groupName
+	// Get current rules for the group using official provisioning API
+	url := c.baseURL + "/api/v1/provisioning/folder/" + folderUID + "/rule-groups/" + groupName
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-Disable-Provenance", "true")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -214,23 +253,68 @@ func (c *GrafanaClient) updateGroupEvaluationInterval(groupName, folderUID, inte
 		return fmt.Errorf("group '%s' not found yet, still being created", groupName)
 	}
 
+	// Read the raw JSON response first
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
 	if resp.StatusCode != 200 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to get current rules (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var currentGroup models.RuleGroup
-	if err := json.NewDecoder(resp.Body).Decode(&currentGroup); err != nil {
-		return fmt.Errorf("failed to parse current group: %v", err)
+	// Parse JSON into a generic map to preserve all fields
+	var groupData map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &groupData); err != nil {
+		return fmt.Errorf("failed to parse current group JSON: %v", err)
 	}
 
-	fmt.Printf("   📊 Current group interval: %s -> setting to: %s\n", currentGroup.Interval, interval)
+	// Get current interval for logging
+	currentInterval, _ := groupData["interval"].(string)
 
-	// Update interval
-	currentGroup.Interval = interval
+	// Convert string interval to seconds (int64)
+	intervalSeconds, err := parseIntervalToSeconds(interval)
+	if err != nil {
+		return fmt.Errorf("failed to parse interval '%s': %v", interval, err)
+	}
 
-	// Update the group
-	return c.CreateOrUpdateRuleGroup(currentGroup)
+	fmt.Printf("   📊 Current group interval: %s -> setting to: %s (%d seconds)\n", currentInterval, interval, intervalSeconds)
+
+	// Update the interval field with int64 value
+	groupData["interval"] = intervalSeconds
+
+	// Convert back to JSON
+	updatedJSON, err := json.Marshal(groupData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated group: %v", err)
+	}
+
+	// Send PUT request to update the group
+	putReq, err := http.NewRequest("PUT", url, bytes.NewBuffer(updatedJSON))
+	if err != nil {
+		return err
+	}
+	putReq.Header.Set("Authorization", "Bearer "+c.token)
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("X-Disable-Provenance", "true")
+
+	putResp, err := http.DefaultClient.Do(putReq)
+	if err != nil {
+		return err
+	}
+	defer putResp.Body.Close()
+
+	// Handle HTTP 202 status - operation accepted, but async
+	if putResp.StatusCode == 202 {
+		return fmt.Errorf("group update still being processed (status 202), need to wait")
+	}
+
+	if putResp.StatusCode != 200 && putResp.StatusCode != 201 {
+		bodyBytes, _ := io.ReadAll(putResp.Body)
+		return fmt.Errorf("failed to update rule group via PUT (status %d): %s", putResp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
 }
 
 func (c *GrafanaClient) GetFolders() ([]models.Folder, error) {
@@ -247,7 +331,7 @@ func (c *GrafanaClient) GetFolders() ([]models.Folder, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("grafana API returned status %d", resp.StatusCode)
 	}
 
 	var folders []models.Folder
@@ -256,4 +340,42 @@ func (c *GrafanaClient) GetFolders() ([]models.Folder, error) {
 	}
 
 	return folders, nil
+}
+
+func (c *GrafanaClient) GetGroupDetails(groupName, folderUID string) (*models.RuleGroup, error) {
+	// Get specific group details using Ruler API
+	url := c.baseURL + "/api/ruler/grafana/api/v1/rules/" + folderUID + "/" + groupName
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("group '%s' not found", groupName)
+	}
+
+	// Handle status 202 (group still being created) but try to parse the response anyway
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get group details (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var group models.RuleGroup
+	if err := json.NewDecoder(resp.Body).Decode(&group); err != nil {
+		return nil, fmt.Errorf("failed to parse group details: %v", err)
+	}
+
+	// If status was 202, log a warning
+	if resp.StatusCode == 202 {
+		fmt.Printf("⚠️  Group '%s' is still being created (status 202), but returning available data\n", groupName)
+	}
+
+	return &group, nil
 }
