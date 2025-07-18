@@ -51,8 +51,8 @@ func (c *GrafanaClient) GetAlerts() ([]models.AlertRule, error) {
 
 func (c *GrafanaClient) UpdateGroupAfterAlertMove(groupName, folderUID, interval string) error {
 	// Retry logic to handle HTTP 202 "Accepted" status
-	maxRetries := 15              // Увеличили с 10 до 15
-	retryDelay := 3 * time.Second // Увеличили с 2s до 3s
+	maxRetries := 10
+	retryDelay := 2 * time.Second
 
 	fmt.Printf("🔧 Setting evaluation interval '%s' for group '%s'...\n", interval, groupName)
 
@@ -61,20 +61,18 @@ func (c *GrafanaClient) UpdateGroupAfterAlertMove(groupName, folderUID, interval
 
 		err := c.updateGroupEvaluationInterval(groupName, folderUID, interval)
 		if err == nil {
-			fmt.Printf("   ✅ Successfully set interval '%s' for group '%s'\n", interval, groupName)
 			return nil // Успех!
 		}
 
 		// Check if it's a retryable error (HTTP 202 or "group not found yet")
 		if strings.Contains(err.Error(), "status 202") ||
 			err.Error() == fmt.Sprintf("group '%s' not found yet, still being created", groupName) {
-			fmt.Printf("   ⏳ Attempt %d/%d: %s, waiting %v...\n",
-				i+1, maxRetries, err.Error(), retryDelay)
+			fmt.Printf("   ⏳ Attempt %d/%d: Group still being created, waiting %v...\n",
+				i+1, maxRetries, retryDelay)
 			continue
 		}
 
 		// Non-retryable error
-		fmt.Printf("   ❌ Non-retryable error: %v\n", err)
 		return err
 	}
 
@@ -224,36 +222,9 @@ func (c *GrafanaClient) updateGroupEvaluationInterval(groupName, folderUID, inte
 		return fmt.Errorf("failed to parse current group: %v", err)
 	}
 
-	fmt.Printf("   📊 Current group interval: %s -> setting to: %s\n", currentGroup.Interval, interval)
-
 	// Update interval
 	currentGroup.Interval = interval
 
 	// Update the group
 	return c.CreateOrUpdateRuleGroup(currentGroup)
-}
-
-func (c *GrafanaClient) GetFolders() ([]models.Folder, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/api/folders", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
-	}
-
-	var folders []models.Folder
-	if err := json.NewDecoder(resp.Body).Decode(&folders); err != nil {
-		return nil, err
-	}
-
-	return folders, nil
 }

@@ -121,17 +121,19 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 		}
 
 		if s.config.NewGroup != "" {
+			// Сначала проверяем/создаем группу
+			if s.config.NewInterval != "" {
+				ruleGroup := models.RuleGroup{
+					Name:      s.config.NewGroup,
+					FolderUID: alert.FolderUID,
+					Interval:  s.config.NewInterval,
+					Rules:     []models.AlertRule{}, // Empty rules initially
+				}
+				s.client.CreateOrUpdateRuleGroup(ruleGroup)
+			}
+
 			alert.RuleGroup = s.config.NewGroup
 			updated = true
-
-			// If interval is specified for the new group, create/update the group first
-			if s.config.NewInterval != "" {
-				if err := s.client.CreateOrUpdateRuleGroup(s.config.NewGroup, alert.FolderUID, s.config.NewInterval); err != nil {
-					fmt.Printf("  status: error creating/updating group - %v\n", err)
-					unchangedCount++
-					continue
-				}
-			}
 		}
 
 		if updated {
@@ -144,15 +146,23 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 			}
 			if s.config.NewGroup != "" {
 				fmt.Printf("  evaluation_group: %s -> New: %s\n", originalAlert.RuleGroup, alert.RuleGroup)
-				if s.config.NewInterval != "" {
-					fmt.Printf("  group_interval: set to %s\n", s.config.NewInterval)
-				}
 			}
 
+			// Сначала обновляем алерт (переносим в новую группу)
 			if err := s.client.UpdateAlert(alert); err != nil {
 				fmt.Printf("  status: error - %v\n", err)
 				unchangedCount++
 				continue
+			}
+
+			// ЗАТЕМ устанавливаем нужный evaluation interval для группы
+			if s.config.NewGroup != "" && s.config.NewInterval != "" {
+				if err := s.client.UpdateGroupAfterAlertMove(s.config.NewGroup, alert.FolderUID, s.config.NewInterval); err != nil {
+					fmt.Printf("  group_interval: ⚠️  Failed to set '%s' via API: %v\n", s.config.NewInterval, err)
+					fmt.Printf("  📋 Manual UI setup required for evaluation interval\n")
+				} else {
+					fmt.Printf("  group_interval: ✅ Successfully set to '%s'\n", s.config.NewInterval)
+				}
 			}
 
 			fmt.Printf("  status: success\n")

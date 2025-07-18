@@ -279,6 +279,23 @@ groups:
    ```
    **Solution**: Add `--firing=5m`, `--pending=10m`, and/or `--group="eval_1m"` parameters.
 
+5. **Custom Evaluation Interval Limitation** ⚠️
+   ```
+   ⚠️ WARNING: Custom evaluation interval '900s' cannot be set via API
+   📋 To set custom interval '900s' for group 'eval_24m':
+      1. Open Grafana UI → Alerting → Alert Rules
+      2. Find group 'eval_24m' → Click 'Edit evaluation group'
+      3. Change 'Evaluation interval' from '5m' to '900s'
+      4. Click 'Save'
+   💡 Alternative: Use Grafana provisioning files for automated setup
+   ```
+   **Explanation**: Grafana's REST API does not support setting custom evaluation intervals for rule groups. The group will be created with the default 5-minute interval, and alerts will be successfully moved to it, but the interval must be changed manually through the UI.
+
+   **Workarounds**:
+   - **Manual UI**: Follow the instructions displayed by the tool
+   - **Provisioning**: Use Grafana's YAML provisioning files
+   - **Accept Default**: Use standard intervals (1m, 5m, 10m, 30m) which work via API
+
 5. **Group Creation Validation**
    ```
    Error: --interval can only be used with --group when creating new evaluation groups
