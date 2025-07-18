@@ -216,19 +216,25 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		}
 	}
 
-	// Group alerts by groups
+	// Group alerts by folder+group combination to avoid mixing groups with same names from different folders
 	groupMap := make(map[string][]models.AlertRule)
 	for _, alert := range alerts {
-		groupMap[alert.RuleGroup] = append(groupMap[alert.RuleGroup], alert)
+		// Use folder+group as key to separate groups with same names in different folders
+		groupKey := alert.FolderUID + "|" + alert.RuleGroup
+		groupMap[groupKey] = append(groupMap[groupKey], alert)
 	}
 
 	// Create one YAML file for all alerts
 	var yamlContent strings.Builder
 	yamlContent.WriteString("groups:\n")
 
-	for groupName, groupAlerts := range groupMap {
+	for groupKey, groupAlerts := range groupMap {
+		// Extract real group name from folderUID|groupName
+		parts := strings.Split(groupKey, "|")
+		realGroupName := parts[1]
+		
 		// Get real group interval or use placeholder
-		interval := groupIntervals[groupName]
+		interval := groupIntervals[realGroupName]
 		if interval == "" {
 			interval = "1m" // placeholder for unknown groups
 		}
@@ -242,7 +248,7 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 
 		yamlContent.WriteString(fmt.Sprintf("  - orgId: %d\n", groupAlerts[0].OrgID))
 		yamlContent.WriteString(fmt.Sprintf("    folder: %s\n", folderName))
-		yamlContent.WriteString(fmt.Sprintf("    name: %s\n", groupName))
+		yamlContent.WriteString(fmt.Sprintf("    name: %s\n", realGroupName))
 		yamlContent.WriteString(fmt.Sprintf("    interval: %s\n", interval))
 		yamlContent.WriteString("    rules:\n")
 
