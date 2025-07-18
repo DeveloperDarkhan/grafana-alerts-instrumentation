@@ -26,6 +26,11 @@ func NewAlertService(cfg *config.Config) *AlertService {
 }
 
 func (s *AlertService) SearchAlerts() error {
+	// Если нужно показать только группы, вызываем соответствующую функцию
+	if s.config.ListGroups {
+		return s.ListGroups()
+	}
+
 	// Получаем алерты
 	alerts, err := s.client.GetAlerts()
 	if err != nil {
@@ -115,6 +120,11 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 			updated = true
 		}
 
+		if s.config.NewGroup != "" {
+			alert.RuleGroup = s.config.NewGroup
+			updated = true
+		}
+
 		if updated {
 			// Показываем изменения
 			if s.config.NewFiring != "" {
@@ -122,6 +132,12 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 			}
 			if s.config.NewPending != "" {
 				fmt.Printf("  pending (for): %s -> New: %s\n", originalAlert.For, alert.For)
+			}
+			if s.config.NewGroup != "" {
+				fmt.Printf("  evaluation_group: %s -> New: %s\n", originalAlert.RuleGroup, alert.RuleGroup)
+				if s.config.NewInterval != "" {
+					fmt.Printf("  group_interval: will be set to %s\n", s.config.NewInterval)
+				}
 			}
 
 			if err := s.client.UpdateAlert(alert); err != nil {
@@ -223,5 +239,66 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 
 	fmt.Printf("  Downloaded: %s\n", filename)
 	fmt.Printf("\nDownloaded %d alerts in 1 combined file to %s/\n", len(alerts), s.config.DownloadDir)
+	return nil
+}
+
+func (s *AlertService) ListGroups() error {
+	// Получаем алерты для подсчета
+	alerts, err := s.client.GetAlerts()
+	if err != nil {
+		return fmt.Errorf("failed to get alerts: %v", err)
+	}
+
+	// Получаем реальные интервалы групп
+	ruleGroups, err := s.client.GetRuleGroups()
+	groupIntervals := make(map[string]string)
+	if err != nil {
+		fmt.Printf("Warning: failed to get rule groups, using default intervals: %v\n", err)
+	} else {
+		for _, group := range ruleGroups {
+			groupIntervals[group.Name] = group.Interval
+		}
+	}
+
+	// Получаем папки для отображения имен
+	folders, err := s.client.GetFolders()
+	folderNames := make(map[string]string)
+	if err != nil {
+		fmt.Printf("Warning: failed to get folders, using folder UIDs: %v\n", err)
+	} else {
+		for _, folder := range folders {
+			folderNames[folder.UID] = folder.Title
+		}
+	}
+
+	// Подсчитываем алерты по группам
+	groupCounts := make(map[string]int)
+	groupFolders := make(map[string]string)
+	for _, alert := range alerts {
+		groupCounts[alert.RuleGroup]++
+		if groupFolders[alert.RuleGroup] == "" {
+			folderName := folderNames[alert.FolderUID]
+			if folderName == "" {
+				folderName = alert.FolderUID
+			}
+			groupFolders[alert.RuleGroup] = folderName
+		}
+	}
+
+	fmt.Println("Available evaluation groups:")
+	fmt.Println("============================")
+
+	for groupName, count := range groupCounts {
+		interval := groupIntervals[groupName]
+		if interval == "" {
+			interval = "1m"
+		}
+		folder := groupFolders[groupName]
+
+		fmt.Printf("%s\n", folder)
+		fmt.Printf("  └── %s (%s) - %d alert(s)\n", groupName, interval, count)
+		fmt.Println()
+	}
+
 	return nil
 }

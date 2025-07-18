@@ -16,9 +16,12 @@ type Config struct {
 	ChangeMode   bool
 	DownloadMode bool
 	ReadAllMode  bool
+	ListGroups   bool
 	DownloadDir  string
 	NewFiring    string
 	NewPending   string
+	NewGroup     string
+	NewInterval  string
 }
 
 func ParseFlags() *Config {
@@ -28,9 +31,12 @@ func ParseFlags() *Config {
 	change := flag.Bool("change", false, "Enable change mode to update alerts")
 	download := flag.Bool("download", false, "Download matched alerts as YAML files")
 	readAll := flag.Bool("read-all", false, "Read and display all alerts without filtering")
+	listGroups := flag.Bool("list-groups", false, "List all evaluation groups with their intervals and alert counts")
 	downloadDir := flag.String("download-dir", "./downloads", "Directory to save downloaded alert YAML files")
 	firing := flag.String("firing", "", "New keep_firing_for duration (e.g., 1m, 5m)")
 	interval := flag.String("pending", "", "New pending (for) duration (e.g., 15m, 5m)")
+	group := flag.String("group", "", "Move alert to specified evaluation group")
+	groupInterval := flag.String("interval", "", "Set interval for new evaluation group (e.g., 300s, 5m)")
 	flag.Parse()
 
 	return &Config{
@@ -41,9 +47,12 @@ func ParseFlags() *Config {
 		ChangeMode:   *change,
 		DownloadMode: *download,
 		ReadAllMode:  *readAll,
+		ListGroups:   *listGroups,
 		DownloadDir:  *downloadDir,
 		NewFiring:    *firing,
 		NewPending:   *interval,
+		NewGroup:     *group,
+		NewInterval:  *groupInterval,
 	}
 }
 
@@ -52,8 +61,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("url and token are required (use flags or env)")
 	}
 
-	// SearchName обязателен только если не в режиме скачивания всех алертов и не в режиме чтения всех алертов
-	if !c.DownloadMode && !c.ReadAllMode && c.SearchName == "" {
+	// SearchName обязателен только если не в режиме скачивания всех алертов, не в режиме чтения всех алертов, и не в режиме списка групп
+	if !c.DownloadMode && !c.ReadAllMode && !c.ListGroups && c.SearchName == "" {
 		return fmt.Errorf("name is required for search/change operations (use --name flag)")
 	}
 
@@ -62,8 +71,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("download mode requires either --read-all flag or --name parameter")
 	}
 
-	if c.ChangeMode && (c.NewFiring == "" && c.NewPending == "") {
-		return fmt.Errorf("when using --change flag, at least one of --firing or --pending must be specified")
+	if c.ChangeMode && (c.NewFiring == "" && c.NewPending == "" && c.NewGroup == "") {
+		return fmt.Errorf("when using --change flag, at least one of --firing, --pending, or --group must be specified")
+	}
+
+	// Если указана новая группа с интервалом, проверяем что задан --change
+	if c.NewInterval != "" && c.NewGroup == "" {
+		return fmt.Errorf("--interval can only be used together with --group")
 	}
 
 	return nil

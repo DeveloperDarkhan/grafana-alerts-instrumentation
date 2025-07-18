@@ -41,6 +41,18 @@ go build -o grafana-alerts ./cmd/main.go
 # Download all alerts as YAML
 ./grafana-alerts --read-all --download
 
+# List all evaluation groups
+./grafana-alerts --list-groups
+
+# Move alert to existing evaluation group
+./grafana-alerts --name="staging" --change --group="eval_1m"
+
+# Move alert and change other parameters
+./grafana-alerts --name="staging" --change --group="eval_1m" --firing="2m"
+
+# Create new evaluation group (group will be created automatically)
+./grafana-alerts --name="staging" --change --group="eval_10m" --interval="600s"
+
 # Or use environment variables
 export GRAFANA_URL="https://your-grafana.com"
 export GRAFANA_TOKEN="your-token"
@@ -59,6 +71,9 @@ export GRAFANA_TOKEN="your-token"
 - `--download-dir`: Directory to save downloaded YAML files (default: "./downloads")
 - `--firing`: New keep_firing_for duration (e.g., 1m, 5m)
 - `--pending`: New pending (for) duration (e.g., 1m, 5m)
+- `--list-groups`: List all evaluation groups with their intervals and alert counts
+- `--group`: Move alert to specified evaluation group (use with --change)
+- `--interval`: Set evaluation interval for new groups (e.g., 60s, 300s)
 
 ## Output Format
 
@@ -96,11 +111,20 @@ Export alerts as YAML files:
 ./grafana-alerts --read-all --download --download-dir="./backups"
 ```
 
+### 5. **Evaluation Groups Management**
+List and manage evaluation groups:
+```bash
+./grafana-alerts --list-groups                                    # List all groups
+./grafana-alerts --name="staging" --change --group="eval_1m"     # Move to existing group
+./grafana-alerts --name="staging" --change --group="eval_10m" --interval="600s"  # Create new group
+```
+
 ## Validation Rules
 
 - `--download` requires either `--read-all` or `--name` parameter
-- `--change` requires at least one of `--firing` or `--pending`
-- `--name` is required for search/change operations (except when using `--read-all`)
+- `--change` requires at least one of `--firing`, `--pending`, or `--group`
+- `--name` is required for search/change operations (except when using `--read-all` or `--list-groups`)
+- `--interval` can only be used with `--group` when creating new evaluation groups
 
 ## Features
 
@@ -112,6 +136,7 @@ Export alerts as YAML files:
 - **Graceful degradation**: Falls back to default intervals if API groups unavailable
 - **UI preservation**: Maintains alert editability in Grafana UI after API updates
 - **Clean output**: Hides verbose details during download operations
+- **Evaluation groups**: List, move alerts between groups, and create new groups with custom intervals
 
 ## Пример вывода
 
@@ -152,6 +177,49 @@ Found 5 total alerts
   Downloaded: 1752780626250902000_downloads.yaml
 
 Downloaded 5 alerts in 1 combined file to ./downloads/
+```
+
+### Просмотр evaluation groups
+```bash
+$ ./grafana-alerts --list-groups
+Available evaluation groups:
+============================
+📁 Observability
+  └── cpu (60s) - 1 alert(s)
+
+📁 Observability
+  └── cpu usage (60s) - 1 alert(s)
+
+📁 Exporters
+  └── eval_1m (300s) - 2 alert(s)
+
+📁 Observability
+  └── new-group (60s) - 1 alert(s)
+```
+
+### Перемещение алерта между группами
+```bash
+$ ./grafana-alerts --name="staging" --change --group="eval_1m"
+uid: alertid123 | pending: 15m | group: cpu | eval_interval: 60s | keep_firing_for: 1m | Test Alert Name...
+  evaluation_group: cpu -> New: eval_1m
+  status: success
+
+Found 1 alerts matching 'staging'
+Changed 1 alerts
+Unchanged 0 alerts
+```
+
+### Создание новой группы с кастомным интервалом
+```bash
+$ ./grafana-alerts --name="staging" --change --group="eval_10m" --interval="600s"
+uid: alertid123 | pending: 15m | group: cpu | eval_interval: 60s | keep_firing_for: 1m | Test Alert Name...
+  evaluation_group: cpu -> New: eval_10m
+  group_interval: will be set to 600s
+  status: success
+
+Found 1 alerts matching 'staging'
+Changed 1 alerts
+Unchanged 0 alerts
 ```
 
 ### Содержимое YAML файла
@@ -207,9 +275,21 @@ groups:
 
 4. **Change Mode Validation**
    ```
-   Error: when using --change flag, at least one of --firing or --pending must be specified
+   Error: when using --change flag, at least one of --firing, --pending, or --group must be specified
    ```
-   **Solution**: Add `--firing=5m` and/or `--pending=10m` parameters.
+   **Solution**: Add `--firing=5m`, `--pending=10m`, and/or `--group="eval_1m"` parameters.
+
+5. **Group Creation Validation**
+   ```
+   Error: --interval can only be used with --group when creating new evaluation groups
+   ```
+   **Solution**: Use `--interval` only together with `--group` parameter.
+
+6. **Groups API Warning**
+   ```
+   Warning: failed to get rule groups for evaluation groups listing
+   ```
+   **Impact**: The `--list-groups` command may not work properly. Check API token permissions.
 
 ### Exit Codes
 
@@ -222,3 +302,7 @@ groups:
 - **UI Compatibility**: Uses `X-Disable-Provenance: true` header to maintain alert editability in Grafana UI
 - **File Naming**: Downloaded YAML files use nanosecond timestamps for uniqueness
 - **Error Handling**: Graceful degradation when API groups are unavailable
+- **Evaluation Groups**: Groups are managed through the `ruleGroup` field in alert rules
+- **Automatic Group Creation**: When moving an alert to a non-existent group, the group is created automatically
+- **Group Intervals**: New groups use the specified `--interval` or default to 60s if not provided
+- **Folder Integration**: Groups listing shows folder names resolved from Grafana folders API
