@@ -159,6 +159,17 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		}
 	}
 
+	// Получаем папки для преобразования UID в названия
+	folders, err := s.client.GetFolders()
+	folderNames := make(map[string]string)
+	if err != nil {
+		fmt.Printf("Warning: failed to get folders, using folder UIDs: %v\n", err)
+	} else {
+		for _, folder := range folders {
+			folderNames[folder.UID] = folder.Title
+		}
+	}
+
 	// Группируем алерты по группам
 	groupMap := make(map[string][]models.AlertRule)
 	for _, alert := range alerts {
@@ -176,7 +187,15 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 			interval = "1m" // заглушка для неизвестных групп
 		}
 
+		// Получаем имя папки вместо UID
+		folderUID := groupAlerts[0].FolderUID
+		folderName := folderNames[folderUID]
+		if folderName == "" {
+			folderName = folderUID // используем UID если имя не найдено
+		}
+
 		yamlContent.WriteString(fmt.Sprintf("  - orgId: %d\n", groupAlerts[0].OrgID))
+		yamlContent.WriteString(fmt.Sprintf("    folder: %s\n", folderName))
 		yamlContent.WriteString(fmt.Sprintf("    name: %s\n", groupName))
 		yamlContent.WriteString(fmt.Sprintf("    interval: %s\n", interval))
 		yamlContent.WriteString("    rules:\n")

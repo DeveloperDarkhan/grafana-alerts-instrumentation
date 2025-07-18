@@ -30,6 +30,12 @@ type AlertGroup struct {
 	Rules    []AlertRule `json:"rules"`
 }
 
+type Folder struct {
+	ID    int    `json:"id"`
+	UID   string `json:"uid"`
+	Title string `json:"title"`
+}
+
 type APIResponse struct {
 	Groups []AlertGroup `json:"groups"`
 }

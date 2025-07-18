@@ -476,3 +476,28 @@ func (c *GrafanaClient) ExportAlertAsYAML(alertUID string) ([]byte, error) {
 
 	return yamlData, nil
 }
+
+func (c *GrafanaClient) GetFolders() ([]models.Folder, error) {
+	req, err := http.NewRequest("GET", c.baseURL+"/api/folders", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Grafana API returned status %d", resp.StatusCode)
+	}
+
+	var folders []models.Folder
+	if err := json.NewDecoder(resp.Body).Decode(&folders); err != nil {
+		return nil, fmt.Errorf("failed to parse folders: %v", err)
+	}
+	return folders, nil
+}
