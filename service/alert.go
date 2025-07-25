@@ -126,7 +126,7 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 		}
 
 		if s.config.NewGroup != "" {
-			// Сначала проверяем/создаем группу
+			// First check/create group
 			if s.config.NewInterval != "" {
 				ruleGroup := models.RuleGroup{
 					Name:      s.config.NewGroup,
@@ -153,19 +153,19 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 				fmt.Printf("  evaluation_group: %s -> New: %s\n", originalAlert.RuleGroup, alert.RuleGroup)
 			}
 
-			// Сначала обновляем алерт (переносим в новую группу)
+			// First update alert (move to new group)
 			if err := s.client.UpdateAlert(alert); err != nil {
 				fmt.Printf("  status: error - %v\n", err)
 				unchangedCount++
 				continue
 			}
 
-			// ВАЖНО: Даем время Grafana обновить состояние группы после перемещения алерта
+			// IMPORTANT: Give Grafana time to update group state after moving alert
 			if s.config.NewGroup != "" && s.config.NewInterval != "" {
 				fmt.Printf("  📝 Alert moved successfully, waiting for group state to update...\n")
-				time.Sleep(3 * time.Second) // Пауза для обновления состояния
+				time.Sleep(3 * time.Second) // Pause for state update
 
-				// Создаем новый клиент для получения свежего состояния
+				// Create new client to get fresh state
 				freshClient := client.NewGrafanaClient(s.config.GrafanaURL, s.config.APIToken)
 
 				if err := freshClient.UpdateGroupAfterAlertMove(s.config.NewGroup, alert.FolderUID, s.config.NewInterval); err != nil {

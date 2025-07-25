@@ -93,14 +93,14 @@ func (c *GrafanaClient) UpdateGroupAfterAlertMove(groupName, folderUID, interval
 	fmt.Printf("🔧 Setting evaluation interval '%s' for group '%s'...\n", interval, groupName)
 
 	for i := 0; i < maxRetries; i++ {
-		if i > 0 { // Не ждем перед первой попыткой, т.к. уже ждали в service
+		if i > 0 { // Don't wait before first attempt, as we already waited in service
 			time.Sleep(retryDelay)
 		}
 
 		err := c.updateGroupEvaluationInterval(groupName, folderUID, interval)
 		if err == nil {
 			fmt.Printf("   ✅ Successfully set interval '%s' for group '%s'\n", interval, groupName)
-			return nil // Успех!
+			return nil // Success!
 		}
 
 		// Check if it's a retryable error (HTTP 202 or "group not found yet")
