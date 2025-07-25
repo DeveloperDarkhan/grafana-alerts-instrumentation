@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,26 +66,26 @@ func (s *AlertService) SearchAlerts() error {
 	count := 0
 	var matchedAlerts []models.AlertRule
 
-	   for _, alert := range alerts {
-			   // If ReadAllMode or DownloadMode with empty SearchName, add all alerts
-			   // Otherwise filter by name
-			   if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
-					   count++
-					   matchedAlerts = append(matchedAlerts, alert)
+	for _, alert := range alerts {
+		// If ReadAllMode or DownloadMode with empty SearchName, add all alerts
+		// Otherwise filter by name
+		if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
+			count++
+			matchedAlerts = append(matchedAlerts, alert)
 
-					   if s.config.FullJSON {
-							   // Получить и вывести полный JSON алерта
-							   fullJSON, err := s.client.GetFullAlertJSON(alert.UID)
-							   if err != nil {
-									   fmt.Printf("\n[ERROR] Failed to get full JSON for alert %s: %v\n", alert.UID, err)
-							   } else {
-									   fmt.Printf("\n[ALERT %s FULL JSON]:\n%s\n", alert.UID, string(fullJSON))
-							   }
-					   } else if !s.config.DownloadMode {
-							   s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
-					   }
-			   }
-	   }
+			if s.config.FullJSON {
+				// Получить и вывести полный JSON алерта
+				fullJSON, err := s.client.GetFullAlertJSON(alert.UID)
+				if err != nil {
+					fmt.Printf("\n[ERROR] Failed to get full JSON for alert %s: %v\n", alert.UID, err)
+				} else {
+					fmt.Printf("\n[ALERT %s FULL JSON]:\n%s\n", alert.UID, string(fullJSON))
+				}
+			} else if !s.config.DownloadMode {
+				s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
+			}
+		}
+	}
 
 	if s.config.ReadAllMode {
 		fmt.Printf("Found %d total alerts\n", count)
@@ -160,8 +161,44 @@ func (s *AlertService) updateAlerts(alerts []models.AlertRule) error {
 				fmt.Printf("  evaluation_group: %s -> New: %s\n", originalAlert.RuleGroup, alert.RuleGroup)
 			}
 
-			// First update alert (move to new group)
-			if err := s.client.UpdateAlert(alert); err != nil {
+			// Получаем полный JSON алерта
+			raw, err := s.client.GetFullAlertJSON(alert.UID)
+			if err != nil {
+				fmt.Printf("  status: error - failed to get full alert JSON: %v\n", err)
+				unchangedCount++
+				continue
+			}
+
+			// Декодируем в map
+			var alertMap map[string]interface{}
+			if err := json.Unmarshal(raw, &alertMap); err != nil {
+				fmt.Printf("  status: error - failed to unmarshal alert JSON: %v\n", err)
+				unchangedCount++
+				continue
+			}
+
+			// Меняем только нужные поля
+			if s.config.NewGroup != "" {
+				alertMap["ruleGroup"] = s.config.NewGroup
+			}
+			if s.config.NewPending != "" {
+				alertMap["for"] = s.config.NewPending
+			}
+			if s.config.NewFiring != "" {
+				alertMap["keep_firing_for"] = s.config.NewFiring
+			}
+			// Если нужно, можно добавить изменение других полей
+
+			// Кодируем обратно в JSON
+			updatedRaw, err := json.Marshal(alertMap)
+			if err != nil {
+				fmt.Printf("  status: error - failed to marshal updated alert: %v\n", err)
+				unchangedCount++
+				continue
+			}
+
+			// Отправляем обратно в Grafana
+			if err := s.client.UpdateAlertRaw(alert.UID, updatedRaw); err != nil {
 				fmt.Printf("  status: error - %v\n", err)
 				unchangedCount++
 				continue
@@ -239,7 +276,7 @@ func (s *AlertService) downloadAlertsSimple(alerts []models.AlertRule) error {
 		// Extract real group name from folderUID|groupName
 		parts := strings.Split(groupKey, "|")
 		realGroupName := parts[1]
-		
+
 		// Get real group interval or use placeholder
 		interval := groupIntervals[realGroupName]
 		if interval == "" {
