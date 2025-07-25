@@ -65,19 +65,26 @@ func (s *AlertService) SearchAlerts() error {
 	count := 0
 	var matchedAlerts []models.AlertRule
 
-	for _, alert := range alerts {
-		// If ReadAllMode or DownloadMode with empty SearchName, add all alerts
-		// Otherwise filter by name
-		if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
-			count++
-			matchedAlerts = append(matchedAlerts, alert)
+	   for _, alert := range alerts {
+			   // If ReadAllMode or DownloadMode with empty SearchName, add all alerts
+			   // Otherwise filter by name
+			   if s.config.ReadAllMode || s.config.SearchName == "" || strings.Contains(strings.ToLower(alert.Title), strings.ToLower(s.config.SearchName)) {
+					   count++
+					   matchedAlerts = append(matchedAlerts, alert)
 
-			// Show alert details only if not in download mode
-			if !s.config.DownloadMode {
-				s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
-			}
-		}
-	}
+					   if s.config.FullJSON {
+							   // Получить и вывести полный JSON алерта
+							   fullJSON, err := s.client.GetFullAlertJSON(alert.UID)
+							   if err != nil {
+									   fmt.Printf("\n[ERROR] Failed to get full JSON for alert %s: %v\n", alert.UID, err)
+							   } else {
+									   fmt.Printf("\n[ALERT %s FULL JSON]:\n%s\n", alert.UID, string(fullJSON))
+							   }
+					   } else if !s.config.DownloadMode {
+							   s.printAlertWithGroup(alert, groupIntervals[alert.RuleGroup])
+					   }
+			   }
+	   }
 
 	if s.config.ReadAllMode {
 		fmt.Printf("Found %d total alerts\n", count)

@@ -9,20 +9,21 @@ import (
 const MaxTitleLength = 25
 
 type Config struct {
-	GrafanaURL   string
-	APIToken     string
-	SearchName   string
-	MaxTitleLen  int
-	ChangeMode   bool
-	DownloadMode bool
-	ReadAllMode  bool
-	ListGroups   bool
-	GroupDetails string
-	DownloadDir  string
-	NewFiring    string
-	NewPending   string
-	NewGroup     string
-	NewInterval  string
+	   GrafanaURL   string
+	   APIToken     string
+	   SearchName   string
+	   MaxTitleLen  int
+	   ChangeMode   bool
+	   DownloadMode bool
+	   ReadAllMode  bool
+	   ListGroups   bool
+	   GroupDetails string
+	   DownloadDir  string
+	   NewFiring    string
+	   NewPending   string
+	   NewGroup     string
+	   NewInterval  string
+	   FullJSON     bool
 }
 
 func ParseFlags() *Config {
@@ -39,24 +40,26 @@ func ParseFlags() *Config {
 	interval := flag.String("pending", "", "New pending (for) duration (e.g., 15m, 5m)")
 	group := flag.String("group", "", "Move alert to specified evaluation group")
 	groupInterval := flag.String("interval", "", "Set interval for new evaluation group (e.g., 300s, 5m)")
+	fullJSON := flag.Bool("full-json", false, "Show full JSON for each found alert (via /api/v1/provisioning/alert-rules/:uid/export)")
 	flag.Parse()
 
-	return &Config{
-		GrafanaURL:   *url,
-		APIToken:     *token,
-		SearchName:   *name,
-		MaxTitleLen:  MaxTitleLength,
-		ChangeMode:   *change,
-		DownloadMode: *download,
-		ReadAllMode:  *readAll,
-		ListGroups:   *listGroups,
-		GroupDetails: *groupDetails,
-		DownloadDir:  *downloadDir,
-		NewFiring:    *firing,
-		NewPending:   *interval,
-		NewGroup:     *group,
-		NewInterval:  *groupInterval,
-	}
+	   return &Config{
+			   GrafanaURL:   *url,
+			   APIToken:     *token,
+			   SearchName:   *name,
+			   MaxTitleLen:  MaxTitleLength,
+			   ChangeMode:   *change,
+			   DownloadMode: *download,
+			   ReadAllMode:  *readAll,
+			   ListGroups:   *listGroups,
+			   GroupDetails: *groupDetails,
+			   DownloadDir:  *downloadDir,
+			   NewFiring:    *firing,
+			   NewPending:   *interval,
+			   NewGroup:     *group,
+			   NewInterval:  *groupInterval,
+			   FullJSON:     *fullJSON,
+	   }
 }
 
 func (c *Config) Validate() error {
