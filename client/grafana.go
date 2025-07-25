@@ -18,24 +18,29 @@ type GrafanaClient struct {
 	token   string
 }
 
-// GetFullAlertJSON fetches full alert JSON by UID using the provisioning API
-func (c *GrafanaClient) GetFullAlertJSON(uid string) ([]byte, error) {
-	   url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s/export", c.baseURL, uid)
-	   req, err := http.NewRequest("GET", url, nil)
+
+// UpdateAlertRaw updates an alert by UID using the full raw JSON (or YAML) body, preserving all fields.
+func (c *GrafanaClient) UpdateAlertRaw(uid string, raw []byte) error {
+	   url := fmt.Sprintf("%s/api/v1/provisioning/alert-rules/%s", c.baseURL, uid)
+	   req, err := http.NewRequest("PUT", url, bytes.NewBuffer(raw))
 	   if err != nil {
-			   return nil, err
+			   return err
 	   }
 	   req.Header.Set("Authorization", "Bearer "+c.token)
 	   req.Header.Set("Content-Type", "application/json")
+	   req.Header.Set("X-Disable-Provenance", "true") // Preserve UI editability
+
 	   resp, err := http.DefaultClient.Do(req)
 	   if err != nil {
-			   return nil, err
+			   return err
 	   }
 	   defer resp.Body.Close()
+
 	   if resp.StatusCode != 200 {
-			   return nil, fmt.Errorf("failed to get full alert JSON: status %d", resp.StatusCode)
+			   bodyBytes, _ := io.ReadAll(resp.Body)
+			   return fmt.Errorf("failed to update alert (status %d): %s", resp.StatusCode, string(bodyBytes))
 	   }
-	   return io.ReadAll(resp.Body)
+	   return nil
 }
 
 // parseIntervalToSeconds converts interval strings like "5m", "300s", "1h" to seconds
